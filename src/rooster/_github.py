@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+from datetime import datetime, timezone
 from typing import Self
 
 import httpx
@@ -144,19 +145,25 @@ def get_pull_requests_for_commits(
     pull_requests = []
     seen_commits = 0
     expected_commits = {str(commit.id) for commit in commits}
+    first_commit_date = min(commit.commit_time for commit in commits)
+    since = datetime.fromtimestamp(first_commit_date, timezone.utc).isoformat()
 
-    # Note we use `first: 10` on `history` because GitHub can otherwise
+    # Note we use `first: 50` on `history` because GitHub can otherwise
     # encounter an internal timeout and return a 502
     query = textwrap.dedent(
         """
         query associatedPullRequest(
-            $repo: String!, $owner: String!, $commit: String!, $after: String
+            $repo: String!,
+            $owner: String!,
+            $commit: String!,
+            $since: GitTimestamp!,
+            $after: String
         ) {
             repository(name: $repo, owner: $owner) {
                 commit: object(expression: $commit) {
                     ... on Commit {
                         id
-                        history(first: 10, after: $after) {
+                        history(after: $after, since: $since, first: 50) {
                             nodes {
                                 oid
                                 associatedPullRequests(first: 1) {
@@ -210,6 +217,7 @@ def get_pull_requests_for_commits(
                     "repo": repo_name,
                     "commit": str(first_commit.id),
                     "after": page_start,
+                    "since": since,
                 },
             )
             response_commits = response["data"]["repository"]["commit"]
@@ -266,6 +274,7 @@ def get_pull_requests_for_commits(
                     "repo": repo_name,
                     "commit": str(first_commit.id),
                     "after": page_start,
+                    "since": since,
                 },
             )
 
